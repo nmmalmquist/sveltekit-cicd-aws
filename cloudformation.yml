@@ -1,0 +1,76 @@
+Description: CICD for SvelteKit
+Parameters:
+  LatestAmiId:
+    Description: AMI for EC2 (default is latest AmaLinux2023)
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+  KeyName: 
+    Description : "Name of an existing EC2 KeyPair to enable SSH access to the instances"
+    Type: "AWS::EC2::KeyPair::KeyName"
+    ConstraintDescription : "Must be the name of an existing EC2 KeyPair."
+    AllowedPattern : ".+"
+  BuildFileBucketName:
+    Description: "The bucket that will hold content files for wordpress. Must be globally unique."
+    Type: "String"
+    AllowedPattern : ".+"
+Resources:
+  BuildFileBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BuildFileBucketName
+  Server:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds: 
+        - !Ref InstanceSecurityGroup
+      KeyName: !Ref KeyName
+      Tags:
+        - Key: Name
+          Value: SvelteKit-Server
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init -v --configsets wordpress_install  --stack ${AWS::StackId} --resource WordPressServer --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WordPressServer --region ${AWS::Region}
+  
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22 IPv4 & v6 and HTTP/s on ports 80/443 IPv4
+      SecurityGroupIngress:
+        - Description: 'Allow SSH IPv4 IN'
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow HTTP IPv4 IN'
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow HTTPS IPv4 IN'
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow SSH IPv6 IN'
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: ::/0
+        - Description: 'Allow FTP IPv4 IN'
+          IpProtocol: tcp
+          FromPort: 20
+          ToPort: 20
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow sFTP IPv4 IN'
+          IpProtocol: tcp
+          FromPort: 21
+          ToPort: 21
+          CidrIp: '0.0.0.0/0'
